@@ -316,15 +316,114 @@ class AgenteReactivoModeloNueveCuartos(entornos_o.Agente):
         # Por defecto, moverse aleatoriamente
         return choice(list(self.adyacencias[origen].keys()))
 
-
-
-class NueveCuartosCiego(NueveCuartos):
+class NueveCuartosCompletamenteCiego(NueveCuartos):
     """
     Igual que NueveCuartos, pero no se puede ver nada
 
     """
     def percepcion(self):
         return []
+
+class NueveCuartosCiego(NueveCuartos):
+    """
+    Igual que NueveCuartos, pero solo se puede ver el cuarto actual
+
+    """
+    def percepcion(self):
+        return self.x[0] # Solo devuelve la posición del robot
+    
+class AgenteReactivoModeloNueveCuartosCiego(entornos_o.Agente):
+    """
+    Un agente reactivo basado en modelo  ciego
+
+    """
+    def __init__(self):
+        self.ubicacion_actual = "A"  # Asumimos que empezamos en A
+        self.estados_limpieza = {cuarto: "desconocido" for cuarto in "ABCDEFGHI"}
+        self.cuartos_limpiados = set()
+        
+        self.adyacencias = {
+            "A": {"ir_Derecha": "B", "bajar": "D"},
+            "B": {"ir_Izquierda": "A", "ir_Derecha": "C", "bajar": "E"},
+            "C": {"ir_Izquierda": "B", "bajar": "F"},
+            "D": {"subir": "A", "ir_Derecha": "E", "bajar": "G"},
+            "E": {"subir": "B", "ir_Derecha": "F", "ir_Izquierda": "D", "bajar": "H"},
+            "F": {"subir": "C", "ir_Izquierda": "E", "bajar": "I"},
+            "G": {"subir": "D", "ir_Derecha": "H"},
+            "H": {"subir": "E", "ir_Derecha": "I", "ir_Izquierda": "G"},
+            "I": {"subir": "F", "ir_Izquierda": "H"}
+        }
+        
+        # Plan de recorrido sistemático
+        self.cuartos_objetivo = ["A", "B", "C", "F", "I", "H", "G", "D", "E"]
+        self.objetivo_actual = 0
+
+    def programa(self, percepcion):
+        """
+        Si percepcion contiene la ubicación actual, la usamos
+        Si no, mantenemos nuestro modelo interno
+        """
+        # Intentar extraer ubicación de la percepción si está disponible
+        if percepcion and len(percepcion) > 0:
+            self.ubicacion_actual = percepcion[0]
+        
+        # Si no hemos limpiado el cuarto actual, limpiarlo
+        if self.ubicacion_actual not in self.cuartos_limpiados:
+            self.cuartos_limpiados.add(self.ubicacion_actual)
+            return "limpiar"
+        
+        # Si todos los cuartos han sido visitados, terminar
+        if len(self.cuartos_limpiados) >= 9:
+            return "nada"
+        
+        # Moverse al siguiente cuarto objetivo
+        if self.objetivo_actual < len(self.cuartos_objetivo):
+            cuarto_objetivo = self.cuartos_objetivo[self.objetivo_actual]
+            
+            if self.ubicacion_actual == cuarto_objetivo:
+                self.objetivo_actual += 1
+                if self.objetivo_actual < len(self.cuartos_objetivo):
+                    cuarto_objetivo = self.cuartos_objetivo[self.objetivo_actual]
+                else:
+                    return "nada"
+            
+            # Calcular ruta al cuarto objetivo
+            accion = self._calcular_siguiente_movimiento(cuarto_objetivo)
+            
+            # Actualizar ubicación basada en la acción
+            if accion in self.adyacencias[self.ubicacion_actual]:
+                self.ubicacion_actual = self.adyacencias[self.ubicacion_actual][accion]
+            
+            return accion
+        
+        return "nada"
+    
+    def _calcular_siguiente_movimiento(self, destino):
+        """
+        Calcula el siguiente movimiento para llegar al destino
+        usando BFS simple
+        """
+        if self.ubicacion_actual == destino:
+            return "nada"
+        
+        # BFS para encontrar ruta más corta
+        from collections import deque
+        
+        cola = deque([(self.ubicacion_actual, [])])
+        visitados = {self.ubicacion_actual}
+        
+        while cola:
+            cuarto_actual, ruta = cola.popleft()
+            
+            for accion, siguiente_cuarto in self.adyacencias[cuarto_actual].items():
+                if siguiente_cuarto == destino:
+                    return ruta[0] if ruta else accion
+                
+                if siguiente_cuarto not in visitados:
+                    visitados.add(siguiente_cuarto)
+                    cola.append((siguiente_cuarto, ruta + [accion]))
+        
+        return "nada"  # No se encontro ruta
 
 class NueveCuartosEstocastico(NueveCuartos):
     """
@@ -375,9 +474,184 @@ class NueveCuartosEstocastico(NueveCuartos):
                 elif accion_aleatoria != "nada":
                     self.x[0] = self.adyacencias[robot][accion_aleatoria]
 
-class AgenteReactivoModeloNueveCuartosCiego(entornos_o.Agente):
+class AgenteReactivoModeloNueveCuartosEstocastico(entornos_o.Agente):
     """
-    Un agente reactivo basado en modelo
+    Un agente reactivo basado en modelo estocastico
+
+    """
+    def __init__(self):
+        self.adyacencias = {
+            "A": {"ir_Derecha": "B", "bajar": "D"},
+            "B": {"ir_Izquierda": "A", "ir_Derecha": "C", "bajar": "E"},
+            "C": {"ir_Izquierda": "B", "bajar": "F"},
+            "D": {"subir": "A", "ir_Derecha": "E", "bajar": "G"},
+            "E": {"subir": "B", "ir_Derecha": "F", "ir_Izquierda": "D", "bajar": "H"},
+            "F": {"subir": "C", "ir_Izquierda": "E", "bajar": "I"},
+            "G": {"subir": "D", "ir_Derecha": "H"},
+            "H": {"subir": "E", "ir_Derecha": "I", "ir_Izquierda": "G"},
+            "I": {"subir": "F", "ir_Izquierda": "H"}
+        }
+        
+        # Estado interno del agente
+        self.cuartos_verificados_limpios = set()  # Se guardan los cuartos limpios
+        self.objetivo_actual = None
+        self.accion_anterior = None
+        self.ubicacion_anterior = None
+        self.intentos_limpieza = {}  # Intentos por cuarto
+        self.intentos_movimiento = 0  # Contador de intentos fallidos
+        
+    def programa(self, percepcion):
+        """
+        Programa reactivo que se adapta a las percepciones del ambiente estocastico
+        """
+        ubicacion_actual, estado_limpieza = percepcion
+        
+        # Verificar si la accion anterior tuvo exito
+        self._verificar_accion_anterior(ubicacion_actual)
+        
+        if estado_limpieza == "limpio":
+            self.cuartos_verificados_limpios.add(ubicacion_actual)
+            if ubicacion_actual in self.intentos_limpieza:
+                del self.intentos_limpieza[ubicacion_actual]
+        
+        accion = self._decidir_accion(ubicacion_actual, estado_limpieza)
+        
+        # Guardar informacion para la proxima iteracion
+        self.accion_anterior = accion
+        self.ubicacion_anterior = ubicacion_actual
+        
+        return accion
+    
+    def _verificar_accion_anterior(self, ubicacion_actual):
+        """
+        Verifica si la accion anterior tuvo el efecto esperado
+        """
+        if self.accion_anterior is None:
+            return
+            
+        if self.accion_anterior in ["ir_Derecha", "ir_Izquierda", "subir", "bajar"]:
+            if self.ubicacion_anterior in self.adyacencias:
+                ubicacion_esperada = self.adyacencias[self.ubicacion_anterior].get(self.accion_anterior)
+                if ubicacion_actual == ubicacion_esperada:
+                    # Movimiento exitoso
+                    self.intentos_movimiento = 0
+                else:
+                    # Movimiento fallidoa
+                    self.intentos_movimiento += 1
+    
+    def _decidir_accion(self, ubicacion_actual, estado_limpieza):
+        """
+        Decide la prxima accion basada en la percepcion actual
+        """
+        if estado_limpieza == "sucio":
+            # Contar intentos de limpieza en este cuarto
+            if ubicacion_actual not in self.intentos_limpieza:
+                self.intentos_limpieza[ubicacion_actual] = 0
+            
+            self.intentos_limpieza[ubicacion_actual] += 1
+            
+            # Si hemos intentado muchas veces, tal vez mejor movernos y volver
+            if self.intentos_limpieza[ubicacion_actual] > 5:
+                self.intentos_limpieza[ubicacion_actual] = 0
+                return self._mover_aleatoriamente(ubicacion_actual)
+            
+            return "limpiar"
+        
+        # Si todos los cuartos estan limpios, terminar
+        if len(self.cuartos_verificados_limpios) >= 9:
+            return "nada"
+        
+        # Buscar el proximo cuarto que necesita ser limpiado
+        return self._buscar_siguiente_objetivo(ubicacion_actual)
+    
+    def _buscar_siguiente_objetivo(self, ubicacion_actual):
+        """
+        Busca el siguiente cuarto que necesita ser visitado
+        """
+        cuartos_no_verificados = []
+        for cuarto in "ABCDEFGHI":
+            if cuarto not in self.cuartos_verificados_limpios:
+                cuartos_no_verificados.append(cuarto)
+        
+        if not cuartos_no_verificados:
+            return "nada"
+        
+        # Cuarto mas cercano
+        objetivo = self._cuarto_mas_cercano(ubicacion_actual, cuartos_no_verificados)
+        
+        if objetivo == ubicacion_actual:
+            return "limpiar"
+        
+        # Calcular el siguiente movimiento hacia el objetivo
+        return self._siguiente_movimiento_hacia(ubicacion_actual, objetivo)
+    
+    def _cuarto_mas_cercano(self, origen, candidatos):
+        """
+        Encuentra el cuarto mas cercano usando distancia Manhattan
+        """
+        def posicion(cuarto):
+            # Convertir A-I a coordenadas (fila, columna)
+            return divmod(ord(cuarto) - ord('A'), 3)
+        
+        pos_origen = posicion(origen)
+        distancia_minima = float('inf')
+        mas_cercano = candidatos[0]
+        
+        for candidato in candidatos:
+            pos_candidato = posicion(candidato)
+            distancia = abs(pos_origen[0] - pos_candidato[0]) + abs(pos_origen[1] - pos_candidato[1])
+            if distancia < distancia_minima:
+                distancia_minima = distancia
+                mas_cercano = candidato
+        
+        return mas_cercano
+    
+    def _siguiente_movimiento_hacia(self, origen, destino):
+        """
+        Calcula el siguiente movimiento hacia el destino
+        """
+        if origen == destino:
+            return "limpiar"
+        
+        # BFS con preferencia por movimientos que han fallado menos
+        from collections import deque
+        
+        cola = deque([(origen, [])])
+        visitados = {origen}
+        
+        while cola:
+            cuarto_actual, ruta = cola.popleft()
+            
+            acciones_disponibles = list(self.adyacencias[cuarto_actual].items())
+            
+            # Si hemos tenido muchos fallos de movimiento, ser ma conservador
+            if self.intentos_movimiento > 3:
+                if self.accion_anterior in self.adyacencias[cuarto_actual]:
+                    return self.accion_anterior
+            
+            for accion, siguiente_cuarto in acciones_disponibles:
+                if siguiente_cuarto == destino:
+                    return ruta[0] if ruta else accion
+                
+                if siguiente_cuarto not in visitados:
+                    visitados.add(siguiente_cuarto)
+                    cola.append((siguiente_cuarto, ruta + [accion]))
+        
+        # Si no encontramos ruta, movernos aleatoriamente
+        return self._mover_aleatoriamente(origen)
+    
+    def _mover_aleatoriamente(self, ubicacion_actual):
+        """
+        Realiza un movimiento aleatorio cuando no hay una estrategia clara
+        """
+        acciones_movimiento = list(self.adyacencias[ubicacion_actual].keys())
+        if acciones_movimiento:
+            return random.choice(acciones_movimiento)
+        return "nada"
+
+class AgenteReactivoModeloNueveCuartosCompletamenteCiego(entornos_o.Agente):
+    """
+    Un agente reactivo basado en modelo completamente ciego
 
     """
     def __init__(self):
@@ -508,9 +782,14 @@ def test():
                          AgenteReactivoModeloNueveCuartosCiego(), 
                          200)
     
+    #print("Prueba del entorno completamente ciego con un agente reactivo con modelo")
+    #entornos_o.simulador(NueveCuartosCompletamenteCiego(x0), 
+    #                     AgenteReactivoModeloNueveCuartosCompletamenteCiego(), 
+    #                     200)
+    
     print("\n--- Prueba del entorno estocástico con un agente reactivo con modelo ---")
     entornos_o.simulador(NueveCuartosEstocastico(x0), 
-              AgenteReactivoModeloNueveCuartos(), 
+              AgenteReactivoModeloNueveCuartosEstocastico(), 
               200)
 
 
